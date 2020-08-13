@@ -1392,6 +1392,7 @@ by a header."
                   'text-mode)))
       (unless (derived-mode-p mode)
         (funcall mode))))
+
   "A function for setting up, e.g. the major-mode, of the edit buffer.
 
 The function receives one argument, the annotation whose contents
@@ -1581,36 +1582,22 @@ belong to the same page and A1 is displayed above/left of A2."
                 'pdf-annot-compare-annotations)))
 
 (defun pdf-annot--make-entry-formatter (a)
-  (lambda (fmt)
-    (let ((entry-type (car fmt))
-          (entry-width (cdr fmt))
-          ;; Taken from css-mode.el
-          (contrasty-color
-           (lambda (name)
-             (if (> (color-distance name "black") 292485)
-                 "black" "white")))
-          (prune-newlines
-           (lambda (str)
-             (replace-regexp-in-string "\n" " " str t t))))
-      (cl-ecase entry-type
-        (date (pdf-annot-print-property a 'modified))
-        (page (pdf-annot-print-property a 'page))
-        (label (funcall prune-newlines
-                        (pdf-annot-print-property a 'label)))
-        (contents
-         (truncate-string-to-width
-          (funcall prune-newlines
-                   (pdf-annot-print-property a 'contents))
-          entry-width))
-        (type
-         (let ((color (pdf-annot-get a 'color))
-               (type (pdf-annot-print-property a 'type)))
-           (if pdf-annot-list-highlight-type
-               (propertize
-                type 'face
-                `(:background ,color
-                  :foreground ,(funcall contrasty-color color)))
-             type)))))))
+  (cl-flet ((get (prop) (pdf-annot-get a prop)))
+    (with-current-buffer (get 'buffer)
+      (-lambda ((entry-type . entry-width))
+        (cl-flet ((print (prop) (pdf-annot-print-property a prop))
+                  (truncate (str) (truncate-string-to-width (car (s-lines str)) entry-width))
+                  (render-with (face str) (propertize str 'face `(:inherit ,face))))
+          (cl-ecase entry-type
+            (region
+             (-let* (((x1 y1 x2 y2) (get 'edges))
+                     (edges (list x1 (+ y1 0.01) x2 (- y2 0.01))) ; improves region grabbing
+                     (region-text (pdf-info-gettext (get 'page) edges nil (get 'buffer))))
+               (render-with 'pdf-occur-document-face (truncate region-text))))
+            (date (print 'modified))
+            (page (render-with 'pdf-occur-page-face (print 'page)))
+            (label (s-join  (print 'label)))
+            (contents (truncate (get 'contents)))))))))
 
 (defun pdf-annot-list-create-entry (a)
   "Create a `tabulated-list-entries' entry for annotation A."
@@ -1714,7 +1701,8 @@ belong to the same page and A1 is displayed above/left of A2."
           (insert
            (pdf-annot-print-annotation
             (pdf-annot-getannot id buffer)))))
-      (read-only-mode 1))))
+      (org-mode)
+      (read-only-mode t))))
 
 (defun pdf-annot-list-operation-function (op &rest args)
   (cl-ecase op
