@@ -1581,6 +1581,7 @@ belong to the same page and A1 is displayed above/left of A2."
                                      pdf-annot-list-document-buffer)
                 'pdf-annot-compare-annotations)))
 
+(require 'dash)
 (defun pdf-annot--make-entry-formatter (a)
   (cl-flet ((get (prop) (pdf-annot-get a prop)))
     (with-current-buffer (get 'buffer)
